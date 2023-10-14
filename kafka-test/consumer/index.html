@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Video Stream</title>
+</head>
+<body>
+	<video id="video" controls autoplay></video>
+	<script>
+		const video = document.getElementById('video');
+		const socket = new WebSocket("ws://localhost:8084/ws");
+        var blob
+
+		socket.onmessage = function(event) {
+			// blob = new Blob([event.data], { type: "video/mp4" });
+           // console.log(blob);
+            video.src = URL.createObjectURL(event.data);
+			
+		};
+
+        
+	</script>
+</body>
+</html>

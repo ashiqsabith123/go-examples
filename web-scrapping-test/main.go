@@ -23,7 +23,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Find and extract specific information from the HTML document
+	// Getting the heading of facebook login page
 	doc.Find("h2._8eso").Each(func(index int, element *goquery.Selection) {
 		// Print the text of the first <h1> element found on the pageem
 
