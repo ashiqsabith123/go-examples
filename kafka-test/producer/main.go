@@ -1,93 +1,61 @@
 package main
 
 import (
-	"encoding/base64"
-	"io/ioutil"
-	"log"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/IBM/sarama"
+	"gocv.io/x/gocv"
 )
 
 func main() {
-	// Set up the Kafka producer configuration.
 	config := sarama.NewConfig()
 	config.Producer.Return.Successes = true
-	//config.Producer.RequiredAcks = sarama.WaitForLocal
-	config.Producer.MaxMessageBytes = 10 * 1024 * 1024 * 1024
-	//config.Producer.Compression = sarama.CompressionGZIP // Use GZIP compression, for example
-
 	producer, err := sarama.NewSyncProducer([]string{"localhost:9092"}, config)
 	if err != nil {
-		log.Fatalf("Error creating producer: %v", err)
+		panic(err)
 	}
+
 	defer producer.Close()
 
-	videoData, err := ReadBinaryFile("WhatsApp Video 2023-10-14 at 4.29.38 PM.mp4")
-	if err != nil {
-		log.Fatalf("Failed to read the video file: %v", err)
+	camera, _ := gocv.OpenVideoCapture(0)
+	if camera.IsOpened() {
+		defer camera.Close()
+	} else {
+		fmt.Println("Error: camera not opened")
+		return
 	}
 
-	videoBase64 := base64.StdEncoding.EncodeToString(videoData)
+	frame := gocv.NewMat()
+	defer frame.Close()
 
-	maxChunkSize := 100
+	// Handle Ctrl+C signal to gracefully exit
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 
-	chunks := chunkString(videoBase64, maxChunkSize)
+	for {
+		camera.Read(&frame)
+		if frame.Empty() {
+			break
+		}
 
-	for i, chunk := range chunks {
-		topic := "large-data-topic"
-		partition := int32(i) % 3 // Example partition selection logic
-		//key := "chunk-" + fmt.Sprint(i)
+		// Convert the frame to a byte slice
+		frameBytes := frame.ToBytes()
 
+		// Create a Kafka message with the frame data
 		message := &sarama.ProducerMessage{
-			Topic:     topic,
-			Partition: partition,
-			//Key:       sarama.StringEncoder(key),
-			Value: sarama.StringEncoder(chunk),
+			Topic:     "my-topic4",
+			Partition: 0,
+			Value:     sarama.ByteEncoder(frameBytes),
 		}
 
-		// Send the chunk to Kafka
-		partition, offset, err := producer.SendMessage(message)
-		if err != nil {
-			log.Printf("Failed to send chunk %d: %v", i, err)
-		}
-
-		log.Printf("Message sent to partition %d at offset %d\n", partition, offset)
-		//time.Sleep(3 * time.Second)
+		// Send the message to Kafka
+		producer.SendMessage(message)
+		fmt.Printf("video send partition: %v ", 0)
 	}
 
-	//fmt.Println(videoData)
-
-	// Create a message to send.
-	// message := &sarama.ProducerMessage{
-	// 	Topic:     "my-topic2",
-	// 	Partition: 0,
-	// 	Value:     sarama.StringEncoder(videoBase64),
-	// }
-
-	// // Send the message.
-	// partition, offset, err := producer.SendMessage(message)
-	// if err != nil {
-	// 	log.Fatalf("Failed to send message: %v", err)
-	// }
-
-}
-
-func ReadBinaryFile(filename string) ([]byte, error) {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-func chunkString(s string, chunkSize int) []string {
-	var chunks []string
-	for i := 0; i < len(s); i += chunkSize {
-		end := i + chunkSize
-		if end > len(s) {
-			end = len(s)
-		}
-		chunks = append(chunks, s[i:end])
-	}
-	return chunks
+	// Wait for the Ctrl+C signal to exit
+	<-sigchan
 }

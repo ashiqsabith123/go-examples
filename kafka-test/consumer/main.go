@@ -1,99 +1,53 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
-	"io/ioutil"
-	"log"
-	"net/http"
-	"sync"
 
 	"github.com/IBM/sarama"
-	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
-)
-
-var (
-	videoData []byte
-	upgrader  = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-	}
+	"gocv.io/x/gocv"
 )
 
 func main() {
-	router := gin.Default()
-	router.LoadHTMLFiles("index.html")
-	router.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "index.html", nil)
-	})
-
-	router.GET("/ws", sendData)
-	router.Run(":8084")
-
-}
-
-func sendData(c *gin.Context) {
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	defer conn.Close()
-
-	var wg sync.WaitGroup
-	//var data []byte
 	config := sarama.NewConfig()
-	config.Consumer.Offsets.Initial = sarama.OffsetOldest
 	consumer, err := sarama.NewConsumer([]string{"localhost:9092"}, config)
 	if err != nil {
-		log.Fatalf("Error creating consumer: %v", err)
+		panic(err)
 	}
 	defer consumer.Close()
 
-	// Subscribe to the Kafka topic.
-	topic := "large-data-topic"
-	partitionConsumer, err := consumer.ConsumePartition(topic, 0, sarama.OffsetNewest)
+	partitionConsumer, err := consumer.ConsumePartition("my-topic4", 0, sarama.OffsetNewest)
 	if err != nil {
-		log.Fatalf("Error creating partition consumer: %v", err)
+		panic(err)
 	}
 
-	wg.Add(1)
+	fmt.Println(partitionConsumer)
+	defer partitionConsumer.Close()
 
-	go func() {
-		for message := range partitionConsumer.Messages() {
-			log.Printf("Received video message at offset %d\n", message.Offset)
+	// Handle Ctrl+C signal to gracefully exit
+	// sigchan := make(chan os.Signal, 1)
+	// signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 
-			// Decode base64 to binary data
-			videoBase64 := message.Value
-			videoData, err := base64.StdEncoding.DecodeString(string(videoBase64))
-			if err != nil {
-				log.Fatalf("Failed to decode video: %v", err)
-			}
-
-			fmt.Println(videoData)
-			//data = append(data, videoData...)
-
-			err = conn.WriteMessage(websocket.BinaryMessage, videoData)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-
+	for message := range partitionConsumer.Messages() {
+		fmt.Println(message.Value)
+		frame, err := gocv.IMDecode(message.Value, gocv.IMReadUnchanged)
+		if err != nil {
+			fmt.Println("error while decoding", err)
+		}
+		if frame.Empty() {
+			fmt.Println("Received an empty frame")
+			continue
 		}
 
-		wg.Done()
-	}()
+		// Display the frame (you can adjust the window title)
+		gocv.IMWrite("Received Frame", frame)
+		//gocv.WaitKey(1)
 
-	wg.Wait()
+		frame.Close() // Re
 
-}
-
-func ReadBinaryFile(filename string) ([]byte, error) {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return nil, err
 	}
-	return data, nil
+
+	// Create a new Mat and load the frame data from the Kafka message
+
+	// Wait for the Ctrl+C signal to exit
+	//<-sigchan
 }
