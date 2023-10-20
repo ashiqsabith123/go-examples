@@ -23,6 +23,7 @@ func main() {
 	// Set the window's content to the button
 	myWindow.SetContent(container.NewVBox(
 		widget.NewLabel("Welcome to My Simple GUI App!"),
+		widget.NewLabel("heii hello howa are you"),
 		helloButton,
 	))
 
